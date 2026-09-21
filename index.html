@@ -261,8 +261,10 @@ body.present .dbar{grid-template-columns:170px 1fr 120px}
 
 /* v7: รายวิชาที่ครูสอน (แสดงอ้างอิง) */
 .cbox{padding:12px 16px;background:var(--info-b);border-bottom:1px solid var(--info-line)}
-.cb-t{font-weight:600;color:var(--plum);font-size:.9rem;margin-bottom:6px}
-.cb-t .muted{font-weight:400}
+.cb-toggle{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:none;font-family:'Sarabun',sans-serif;font-weight:600;color:var(--plum);font-size:.92rem;cursor:pointer;padding:2px 0}
+.cb-toggle:hover{text-decoration:underline}
+.cb-arrow{flex:none;width:14px;color:var(--plum2)}
+.cb-note{font-size:.82rem;color:var(--muted);margin:6px 0 4px 22px}
 .cb-i{display:flex;gap:10px;align-items:baseline;padding:5px 0;font-size:.9rem;border-top:1px dashed var(--info-line)}
 .cb-i .code{min-width:82px}
 .cb-n{flex:1;min-width:0}
@@ -436,7 +438,7 @@ var DOC_NOTE = {
   'บันทึกหลังการจัดกิจกรรมการเรียนรู้':'วางลิงก์ · สแกน QR · หรืออัปโหลดไฟล์ เพิ่มได้หลายรายการ',
   'เอกสารอื่นๆ':'ส่งได้เช่นเดียวกัน · เอกสารประกอบอื่น ๆ'
 };
-var S = { courses:[], up:{}, upQueue:[], upBusy:false, upDoc:'', boot:null, teacher:null, links:[], rows:{}, seq:0, msg:{}, sure:{} };
+var S = { coursesOpen:false, courses:[], up:{}, upQueue:[], upBusy:false, upDoc:'', boot:null, teacher:null, links:[], rows:{}, seq:0, msg:{}, sure:{} };
 
 function $(id){return document.getElementById(id)}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
@@ -519,7 +521,7 @@ function pickTeacher(t){
   $('whoName').textContent=t.name; $('whoDept').textContent=t.dept;
   $('mine').classList.remove('hidden');
   $('docs').innerHTML='<div class="card muted">กำลังโหลด…</div>';
-  S.courses=[];
+  S.courses=[]; S.coursesOpen=false;
   run('getMyCourses',t.tcode).then(function(cs){ if(S.teacher&&S.teacher.tcode===t.tcode){S.courses=cs||[];renderDocs()} }).catch(function(){});
   run('getMyLinks',t.tcode).then(function(items){
     S.links=items;renderDocs();
@@ -585,11 +587,18 @@ function addAreaHtml(doc,hasAny){
      '<button class="btn add" data-upload="'+esc(doc)+'"'+dis+'>'+UP_ICON+'อัปโหลดไฟล์</button></div></div>';
   return h;
 }
+function fmtRooms(x){return String(x==null?'':x).replace(/(\d)\/0+(\d)/g,'$1/$2')}   // ม.4/02 → ม.4/2 (ไม่มี 0 นำหน้าเลขห้อง)
 function coursesHtml(){
   var cs=S.courses||[];
   if(!cs.length) return '';
-  return '<div class="cbox"><div class="cb-t">รายวิชาที่ท่านสอน ('+cs.length+' รายวิชา) <span class="muted">— แสดงเพื่ออ้างอิง ไม่ต้องระบุตอนส่ง</span></div>'+
-    cs.map(function(c){return '<div class="cb-i"><span class="code">'+esc(c.code||'—')+'</span><span class="cb-n">'+esc(c.name)+'</span><span class="cb-g">'+esc(c.groups)+'</span></div>'}).join('')+'</div>';
+  var open=!!S.coursesOpen;
+  var h='<div class="cbox"><button class="cb-toggle" data-courses-toggle aria-expanded="'+open+'"><span class="cb-arrow">'+(open?'▾':'▸')+'</span>'+
+    (open?'ซ่อนรายวิชาที่ท่านสอน':'ดูรายวิชาที่ท่านสอน')+' ('+cs.length+' รายวิชา)</button>';
+  if(open){
+    h+='<div class="cb-note">แสดงเพื่ออ้างอิง ไม่ต้องระบุตอนส่ง</div>'+
+      cs.map(function(c){return '<div class="cb-i"><span class="code">'+esc(c.code||'—')+'</span><span class="cb-n">'+esc(c.name)+'</span><span class="cb-g">'+esc(fmtRooms(c.groups))+'</span></div>'}).join('');
+  }
+  return h+'</div>';
 }
 function renderDocs(){
   var keep={};document.querySelectorAll('[data-in]').forEach(function(i){keep[i.getAttribute('data-in')]=i.value});
@@ -625,6 +634,8 @@ function startCopy(id){
 
 $('docs').addEventListener('click',function(e){
   var t=e.target;
+  var ct=t.closest('[data-courses-toggle]');
+  if(ct){S.coursesOpen=!S.coursesOpen;renderDocs();return}
   var sc=t.closest('[data-scan]');
   if(sc){openScan(sc.getAttribute('data-scan'));return}
   var upb=t.closest('[data-upload]');
@@ -850,7 +861,7 @@ function renderList(){
     var o=DASH.open[x.t.tcode];
     var miss=x.missing.length?'<span class="tb n">ขาด: '+x.missing.map(function(m){return esc(SHORT[m])}).join(', ')+'</span>':'<span class="tb y">ครบตามที่บังคับ</span>';
     DOC_ORDER.forEach(function(d){ if(REQUIRED.indexOf(d)<0&&x.n[d]) miss+='<span class="tb g">'+esc(SHORT[d]||d)+' '+x.n[d]+'</span>' });
-    var body='<div class="courses"><b>สอน '+x.t.courseCount+' รายวิชา:</b> '+(x.t.courses?esc(x.t.courses):'—')+'</div>'+
+    var body='<div class="courses"><b>สอน '+x.t.courseCount+' รายวิชา:</b> '+(x.t.courses?esc(fmtRooms(x.t.courses)):'—')+'</div>'+
       (x.links.length?'<div class="tscroll"><table><tr><th>ประเภท</th><th>ไฟล์ (ต้นฉบับ)</th><th>ตรวจลิงก์</th><th>สำเนา</th></tr>'+x.links.map(function(l){
         return '<tr><td>'+esc(l.doc)+'</td><td><a href="'+esc(l.url)+'" target="_blank" rel="noopener">'+esc(l.fileName||'เปิด')+'</a>'+upTag(l)+'<div class="muted">'+esc(l.created)+'</div></td><td>'+checkChip(l.check)+'</td>'+
           '<td>'+copyChip({cstatus:l.cstatus,fileType:'',ccount:l.ccount})+(l.curl?'<div><a href="'+esc(l.curl)+'" target="_blank" rel="noopener">เปิดสำเนา</a></div>':'')+(l.cnote?'<div class="muted">'+esc(l.cnote)+'</div>':'')+'</td></tr>'}).join('')+'</table></div>':'<div class="muted">ยังไม่มีลิงก์</div>');
